@@ -1,0 +1,31 @@
+{
+  "name": "gaffer",
+  "version": "0.0.1",
+  "description": "Vendor-neutral orchestrator that turns Slack requests into shipped GitHub work using the coding agents you already pay for \u2014 with hard budgets and human gates.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "gaffer": "src/cli.ts"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "start": "node src/cli.ts start",
+    "sim": "node src/cli.ts sim",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc -p .",
+    "eval:triage": "node evals/triage.ts",
+    "demo": "node src/cli.ts demo --reset"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  },
+  "optionalDependencies": {
+    "@slack/bolt": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

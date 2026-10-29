@@ -1,0 +1,85 @@
+# gaffer.yaml — copy to the repo root and edit. Every section is optional;
+# omitted sections fall back to the defaults in src/config.ts.
+
+dataDir: .gaffer
+concurrency: 3            # agent runs at once; tasks waiting on humans hold no slot
+softLimitPercent: 90      # an agent whose plan window is this full gets new long steps only if no one else has room
+
+# The agents you already pay for. `billing: subscription` runs are still
+# metered at list price so budgets stay meaningful across plans.
+agents:
+  claude:      { adapter: claude, model: claude-opus-5-5,  billing: api }
+  claude-fast: { adapter: claude, model: claude-haiku-5-5, billing: api }
+  codex:       { adapter: codex,  model: gpt-5-codex,      billing: subscription }
+
+# Which agents do what, in preference order. When an agent's plan window runs
+# out, the step falls through to the next one; the task only waits if all are
+# out. Review prefers a different vendor from whoever implemented the change.
+routing:
+  triage: [claude-fast, codex]
+  plan: [claude, codex]
+  implement: [claude, codex]
+  review: [codex, claude]
+  answer: [claude, codex]
+
+# Prices gaffer doesn't know yet (USD per million tokens). Subscription runs are
+# metered at these list-price equivalents; unknown models are priced high on purpose.
+# pricing:
+#   your-model-id: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 }
+
+budget:
+  limits:
+    - { scope: org,               period: month, usd: 2000 }
+    - { scope: org,               period: day,   usd: 150 }
+    - { scope: "channel:C0ENGREQ", period: day,   usd: 60 }
+    - { scope: "repo:acme/api",   period: month, usd: 800 }
+    - { scope: "user:*",          period: day,   usd: 25 }   # per requester
+  taskCapUsd: { xs: 1, s: 3, m: 8, l: 20 }   # starting cap by triaged size
+  maxTaskCapUsd: 50                          # spend gates can't raise past this
+  onCap: ask                                 # ask = post a "Budget increase" gate; fail = stop
+  alertAt: [0.5, 0.8, 1.0]
+
+alertChannel: C0ENGLEADS
+defaultApprovers: [U0LEAD1, U0LEAD2]
+
+channels:
+  - id: C0ENGREQ          # #eng-requests
+    repo: acme/api        # default when the message doesn't name one
+    autonomy: 2           # code + PRs freely, humans merge
+    allowUsers: ["*"]
+  - id: C0OPS             # #ops — infra is touchy
+    repo: acme/infra
+    autonomy: 1           # humans approve the plan before code
+    allowUsers: [U0SRE1, U0SRE2]
+  - id: C0DOCS
+    repo: acme/docs
+    autonomy: 3           # auto-merge when green, reviewed and low-risk
+
+# `description` is what triage uses to route requests that don't name a repo.
+repos:
+  acme/api:   { base: main, test: "npm ci && npm test", description: "Node backend: REST API, orders, checkout, billing, webhooks, jobs" }
+  acme/infra: { base: main, test: "terraform validate", description: "Terraform and CI: AWS, IAM, GitHub Actions, environments" }
+  acme/docs:  { base: main, test: "npm run build",      description: "Public documentation site" }
+
+# Extra gates on top of the autonomy defaults. Any matching rule requires the gate.
+gates:
+  - gate: accept
+    when: { estimateUsdGt: 15 }               # expensive work needs a yes up front
+  - gate: merge
+    when: { paths: ["**/migrations/**", "**/*.sql"] }
+    approvers: [U0DBA]
+  - gate: merge
+    when: { paths: [".github/workflows/**", "**/auth/**", "**/billing/**"] }
+    approvers: [U0SECLEAD]
+  - gate: plan
+    when: { kinds: [feature], estimateUsdGt: 5 }
+    timeoutMinutes: 240
+    onTimeout: reject
+
+verify:
+  maxFixAttempts: 2       # implement → test/review → fix, at most this many extra rounds
+  maxCiFixAttempts: 2     # after the PR is open: CI log → agent → push, at most this many rounds
+  ciGraceSeconds: 120     # wait this long for checks to register before assuming the repo has no CI
+
+dashboard:
+  port: 7317              # bound to 127.0.0.1
